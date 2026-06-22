@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddScoped<IBookService, BookService>();  // ← add this
+builder.Services.AddScoped<IBookService, BookService>();  
 
 var app = builder.Build();
 
