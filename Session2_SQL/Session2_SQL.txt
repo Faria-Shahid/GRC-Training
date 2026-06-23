@@ -1,0 +1,118 @@
+Task 6
+WITH customer_spending AS (
+SELECT
+customer_id,
+SUM(order_total) AS total_spent
+FROM ORDERS_T2
+GROUP BY customer_id
+)
+SELECT
+c.full_name,
+cs.total_spent,
+CASE
+WHEN cs.total_spent > (SELECT AVG(total_spent) FROM customer_spending) THEN 'Above Average'
+WHEN cs.total_spent < (SELECT AVG(total_spent) FROM customer_spending) THEN 'Below Average'
+ELSE 'Average'
+END AS spending_label
+FROM customer_spending cs
+JOIN CUSTOMER_T2 c ON cs.customer_id = c.id;
+
+Task 7
+WITH monthly_revenue AS (
+SELECT DATE_FORMAT(order_date, '%Y-%m') AS month, SUM(order_total) AS revenue
+FROM ORDERS_T2
+WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+GROUP BY DATE_FORMAT(order_date, '%Y-%m')
+)
+SELECT month, revenue, SUM(revenue) OVER (ORDER BY month) AS cumulative_revenue
+FROM monthly_revenue;
+
+Task 8
+WITH first_order AS (
+SELECT c.id, c.full_name, c.registration_date, MIN(o.order_date) AS first_order_date
+FROM ORDERS_T2 o
+JOIN CUSTOMER_T2 c ON c.id = o.customer_id
+GROUP BY c.id, c.full_name, c.registration_date
+)
+SELECT full_name, registration_date, first_order_date,
+DATEDIFF(first_order_date, registration_date) AS gap_in_days
+FROM first_order
+WHERE DATEDIFF(first_order_date, registration_date) <= 7;
+
+Task 9
+WITH RECURSIVE category_hierarchy AS (
+
+-- ANCHOR: top-level categories (no parent)
+SELECT
+id,
+name,
+name AS path
+FROM CATEGORY_T2
+WHERE parent_category_id IS NULL
+
+UNION ALL
+
+-- RECURSIVE: find children of what CTE already found
+SELECT
+c.id,
+c.name,
+CONCAT(ch.path, ' > ', c.name) AS path
+FROM CATEGORY_T2 c
+JOIN category_hierarchy ch ON c.parent_category_id = ch.id
+
+)
+SELECT path
+FROM category_hierarchy
+ORDER BY path;
+
+Create view vw_customer_order_summary AS select c.full_name, COUNT(o.id) as total_orders, SUM(o.order_total) as spending, MAX(o.order_date) as latest_order
+from Customer_T2 c
+Join orders_t2 o on c.id = o.customer_id
+Group by c.id, c.full_name;
+
+Select * from vw_customer_order_summary order by spending DESC LIMIT 10;
+
+DELIMITER //
+CREATE FUNCTION fn_customer_lifetime_value(p_customer_id INT)
+RETURNS DOUBLE
+DETERMINISTIC
+BEGIN
+DECLARE v_total DOUBLE;
+
+SET v_total = (SELECT SUM(order_total) FROM ORDERS_T2
+WHERE customer_id = p_customer_id
+AND payment_status = 'Paid');
+
+RETURN v_total;
+END //
+DELIMITER ;
+SELECT fn_customer_lifetime_value(2); -- Bilal, has paid orders
+SELECT fn_customer_lifetime_value(4); -- Hassan, no orders at all
+
+DELIMITER //
+CREATE FUNCTION fn_order_discount(p_order_id INT)
+RETURNS DOUBLE
+DETERMINISTIC
+BEGIN
+DECLARE v_total DOUBLE;
+DECLARE v_discounted DOUBLE;
+
+-- step 1: fetch the order total
+SET v_total = (SELECT order_total FROM ORDERS_T2 WHERE id = p_order_id);
+
+-- step 2: apply discount based on total
+SET v_discounted = CASE
+WHEN v_total > 10000 THEN v_total * 0.90
+WHEN v_total > 5000 THEN v_total * 0.95
+ELSE v_total
+END;
+
+RETURN v_discounted;
+END //
+DELIMITER ;
+
+SELECT fn_order_discount(2); -- order total 223500, should get 10% off
+SELECT fn_order_discount(5); -- order total 4500, no discount
+SELECT fn_order_discount(6); -- order total 6800, 5% off
+
+CREATE INDEX IX_OrderItems_ProductId ON ORDER_ITEM_T2 (product_id);
